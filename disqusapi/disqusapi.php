@@ -9,10 +9,10 @@
  * @link		http://disqus.com/
  * @package		disqusapi
  * @version		0.1.0
- * 
+ *
  * $disqus = new DisqusAPI($secret_key)
  * $disqus->trends->listThreads()
- * 
+ *
  */
 
 if (!defined('DISQUS_API_HOST')) {
@@ -26,15 +26,15 @@ define('DISQUS_API_VERSION', '0.0.1');
 require_once(dirname(__FILE__) . '/url.php');
 
 if (!extension_loaded('json')) {
-	require_once(dirname(__FILE__) . '/json.php');
-	function dsq_json_decode($data) {
-		$json = new JSON;
-		return $json->unserialize($data);
-	}
+    require_once(dirname(__FILE__) . '/json.php');
+    function dsq_json_decode($data) {
+        $json = new JSON;
+        return $json->unserialize($data);
+    }
 } else {
-	function dsq_json_decode($data) {
-		return json_decode($data);
-	}	
+    function dsq_json_decode($data) {
+        return json_decode($data);
+    }
 }
 
 global $DISQUS_API_INTERFACES;
@@ -52,7 +52,7 @@ class DisqusAPIError extends Exception {
 class DisqusResource {
     public function __construct($api, $interface=null, $node=null, $tree=array()) {
         global $DISQUS_API_INTERFACES;
-        
+
         if (!$interface) {
             $interface = $DISQUS_API_INTERFACES;
         }
@@ -64,7 +64,7 @@ class DisqusResource {
         }
         $this->tree = $tree;
     }
-    
+
     public function __get($attr) {
         $interface = $this->interface->$attr;
         if (!$interface) {
@@ -72,34 +72,45 @@ class DisqusResource {
         }
         return new DisqusResource($this->api, $interface, $attr, $this->tree);
     }
-    
+
     public function __call($name, $args) {
         $resource = $this->interface->$name;
         if (!$resource) {
             throw new DisqusInterfaceNotDefined();
         }
         $kwargs = (array)$args[0];
-        
+
         foreach ((array)$resource->required as $k) {
             if (empty($kwargs[$k])) {
                 throw new Exception('Missing required argument: '.$k);
             }
         }
-        
+
+        $one_required_found = false;
+        foreach ((array)$resource->one_required as $k) {
+            if (!empty($kwargs[$k])) {
+                $one_required_found = true;
+            }
+        }
+        if(!$one_required_found){
+            throw new Exception('One of these arguments required: '.implode(", ", (array)$resource->one_required));
+        }
+
+
         $api = $this->api;
-        
+
         if (empty($kwargs['api_secret'])) {
             $kwargs['api_secret'] = $api->key;
         }
-        
+
         // emulate a named pop
         $version = (!empty($kwargs['version']) ? $kwargs['version'] : $api->version);
         $format = (!empty($kwargs['format']) ? $kwargs['format'] : $api->format);
         unset($kwargs['version'], $kwargs['format']);
-        
+
         $url = ($api->is_secure ? 'https://'.DISQUS_API_SSL_HOST : 'http://'.DISQUS_API_HOST);
         $path = '/api/'.$version.'/'.implode('/', $this->tree).'/'.$name.'.'.$format;
-        
+
         if (!empty($kwargs)) {
             if ($resource->method == 'POST') {
                 $post_data = $kwargs;
@@ -108,16 +119,16 @@ class DisqusResource {
                 $path .= '?'.dsq_get_query_string($kwargs);
             }
         }
-        
+
 
         $response = dsq_urlopen($url.$path, $post_data);
-        
+
         $data = call_user_func($api->formats[$format], $response['data']);
-        
+
         if ($response['code'] != 200) {
             throw new DisqusAPIError($data->code, $data->response);
         }
-        
+
         return $data->response;
     }
 }
@@ -129,6 +140,11 @@ class DisqusAPI extends DisqusResource {
     );
 
     public function __construct($key=null, $format='json', $version='3.0', $is_secure=false) {
+
+        if(is_null($key) && defined("DISQUS_SECRET_KEY")){
+            $key = DISQUS_SECRET_KEY;
+        }
+
         $this->key = $key;
         $this->format = $format;
         $this->version = $version;
@@ -147,7 +163,7 @@ class DisqusAPI extends DisqusResource {
     public function setFormat($format) {
         $this->format = $format;
     }
-    
+
     public function setVersion($version) {
         $this->version = $version;
     }
